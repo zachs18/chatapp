@@ -1,5 +1,5 @@
 use std::net::*;
-use std::io::{self, prelude::*};
+use std::io;
 use std::os::unix::io::AsRawFd;
 
 mod util;
@@ -54,17 +54,44 @@ fn main() -> io::Result<()> {
                 unreachable!()
             }
         };
+    let mut new_name: Option<String> = None;
     println!("Name: {}", name);
+
+    // TODO: use tui crate with a window above for message history and a text entry box for message entry
 
     let mut input_line: String = String::new();
     let mut stdin = io::stdin();
     loop {
         match poll_in(
-            vec![(StdinOrServer::Stdin, &mut stdin as &mut AsRawFd), (StdinOrServer::Server, &mut stream)].into_iter(),
+            vec![(StdinOrServer::Stdin, &mut stdin as &mut dyn AsRawFd), (StdinOrServer::Server, &mut stream)].into_iter(),
             50
         )? {
             Some((StdinOrServer::Stdin, _)) => {
-                todo!("read from stdin and send to server");
+                // TODO: handle non-full lines?
+                input_line.clear();
+                stdin.read_line(&mut input_line)?;
+                if let Some(name_request) = input_line.strip_prefix("/name ") {
+                    let name_request = name_request.trim();
+                    new_name = Some(name_request.into());
+                    let msg = Message::NameChangeRequest(name_request.into());
+                    let msg_bytes = msg.to_bytes();
+                    send_msg(&mut stream, &msg_bytes)?;
+                    println!("You requested new name: {}", name_request);
+                } else if input_line.starts_with("/disconnect") {
+                    let msg = Message::Disconnect;
+                    let msg_bytes = msg.to_bytes();
+                    send_msg(&mut stream, &msg_bytes)?;
+                    println!("Disconnecting");
+                    break;
+                } else if input_line.starts_with("/") {
+                    println!("Command not implemented: {}", input_line);
+                } else if input_line.len() > 0 {
+                    let input_line = input_line.trim();
+                    let msg = Message::ChatMessage(input_line.into());
+                    let msg_bytes = msg.to_bytes();
+                    send_msg(&mut stream, &msg_bytes)?;
+                    println!("(you): {}", input_line);
+                }
             },
             Some((StdinOrServer::Server, _)) => {
                 let msg = recv_msg(&mut stream)?;
@@ -72,11 +99,17 @@ fn main() -> io::Result<()> {
                 match Message::from_bytes(&msg[..]) {
                     Some(Disconnect) => {
                         println!("Disconnected.");
-                        todo!("formatted output");
                     },
                     Some(ChatMessage(s)) => {
                         println!("{}", s);
-                        todo!("formatted output");
+                    },
+                    Some(NameChangeApproval) => {
+                        name = new_name.take().unwrap();
+                        println!("New name: {}", name);
+                    },
+                    Some(NameChangeDenial(reason)) => {
+                        let denied_name = new_name.take().unwrap();
+                        println!("Name request ({}) denied: {}.", denied_name, reason);
                     },
                     _ => todo!(),
                 };

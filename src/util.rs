@@ -3,7 +3,10 @@ use std::os::unix::io::AsRawFd;
 use libc::{poll, pollfd, POLLIN};
 use std::convert::TryInto;
 
-use crate::messages::Message;
+//use crate::messages::Message;
+// TODO: maybe make send_msg and recv_msg use Message? Maybe by having Message keep a cached to_bytes?
+// But then it couldn't really be an enum so maybe don't do that and keep how I have it now
+// where to_bytes is called explicitly
 
 /// Repeatedly prompts user with prompt on output and gets a line of user input from input
 /// until parser(line of input) returns Some(value), then returns Ok(value)
@@ -33,7 +36,7 @@ pub fn get_user_input<T>(
 /// Returns the index of the first Fd that was ready for reading,
 /// or None if none were ready before the timeout, or some errored.
 pub fn poll_in<'a, K, F: AsRawFd + ?Sized>(fds: impl Iterator<Item=(K, &'a mut F)>, timeout: i32) -> io::Result<Option<(K, &'a mut F)>> {
-    let (mut pollfds, mut refs): (Vec<pollfd>, Vec<(K, &'a mut F)>) = fds.map(
+    let (mut pollfds, refs): (Vec<pollfd>, Vec<(K, &'a mut F)>) = fds.map(
         |arf| { (
             pollfd {
                 fd: arf.1.as_raw_fd(),

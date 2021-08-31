@@ -1,5 +1,5 @@
 use std::net::*;
-use std::io::{self, prelude::*};
+use std::io;
 use std::collections::HashMap;
 use std::sync::{Mutex, Arc};
 use std::time::Duration;
@@ -42,45 +42,73 @@ fn main() -> io::Result<()> {
     let server_addr: SocketAddr = (ip, port).into();
     let listener = TcpListener::bind(server_addr)?;
 
-    let clients: Arc<Mutex<HashMap<SocketAddr, (String, TcpStream)>>> = Arc::new(Mutex::new(HashMap::new()));
+    let clients_: Arc<Mutex<HashMap<SocketAddr, (String, TcpStream)>>> = Arc::new(Mutex::new(HashMap::new()));
 
-    let clients_ = Arc::clone(&clients);
-    let connection_handler_thread = std::thread::spawn(move || -> io::Result<()> {
+    let clients__ = Arc::clone(&clients_);
+    let _connection_handler_thread = std::thread::spawn(move || -> io::Result<()> {
         loop {
             let (mut stream, addr) = listener.accept()?;
-            let mut clients = clients_.lock().unwrap();
+            let mut clients = clients__.lock().unwrap();
             let name = format!("{}", addr);
             let msg = Message::NameAssignment((&name).into());
-            send_msg(&mut stream, &msg.to_bytes());
-            eprintln!("{} joined", name);
+            send_msg(&mut stream, &msg.to_bytes())?;
+            let joined_msg = Message::ChatMessage(format!("{} joined", name).into());
+            let joined_msg_bytes = joined_msg.to_bytes();
+            // send "{name} joined" message to all other clients
+            for (_, stream) in clients.values_mut() {
+                send_msg(stream, &joined_msg_bytes)?;
+            }
             clients.insert(addr, (name, stream));
-            // TODO: send "{name} joined" message to all(?) clients
         }
     });
 
     loop {
-        let mut clients_ = clients.lock().unwrap();
-        match poll_in(clients_.iter_mut().map(|(addr, (name, stream))| ((addr, name), stream)), 0)? {
+        let mut clients = clients_.lock().unwrap();
+        match poll_in(clients.iter_mut().map(|(addr, (name, stream))| ((addr, name), stream)), 0)? {
             Some(((addr, name), stream)) => {
                 let msg = recv_msg(stream)?;
-                let addr = *addr; // clients_'s .iter_mut() borrow should end here if name is not used?
+                let src_addr = *addr; // clients's .iter_mut() borrow should end here if name is not used?
                 use Message::*;
                 match Message::from_bytes(&msg[..]) {
-                    Some(Disconnect) => clients_.remove(&addr),
+                    Some(Disconnect) => {
+                        let addr = *addr;
+                        let (name, _stream) = clients.remove(&addr).unwrap();
+                        let msg = ChatMessage(format!("{} disconnected", name).into());
+                        let msg_bytes = msg.to_bytes();
+                        for (_, stream) in clients.values_mut() {
+                            send_msg(stream, &msg_bytes)?;
+                        }
+                    },
                     Some(ChatMessage(s)) => {
-                        let msg = format!("{}: {}", name, s);
-                        todo!("send message to other clients");
+                        let msg = ChatMessage(format!("{}: {}", name, s).into());
+                        let msg_bytes = msg.to_bytes();
+                        for (dst_addr, (_, stream)) in clients.iter_mut() {
+                            if &src_addr != dst_addr {
+                                send_msg(stream, &msg_bytes)?;
+                            }
+                        }
                     },
                     Some(NameChangeRequest(new_name)) => {
-                        clients_.get_mut(&addr).unwrap().0 = new_name.into();
+                        let mut new_name: String = new_name.into();
+                        let addr = *addr;
                         // TODO: uniqueness checking
-                        todo!();
+                        let (name, stream) = clients.get_mut(&addr).unwrap();
+                        std::mem::swap(name, &mut new_name);
+                        let old_name = new_name;
+                        send_msg(stream, &NameChangeApproval.to_bytes())?;
+                        let msg = ChatMessage(format!("{} is now known as {}", old_name, name).into());
+                        let msg_bytes = msg.to_bytes();
+                        for (dst_addr, (_, stream)) in clients.iter_mut() {
+                            if dst_addr != &addr {
+                                send_msg(stream, &msg_bytes)?;
+                            }
+                        }
                     },
                     _ => todo!(),
                 };
             },
             None => {
-                drop(clients_); // explicitly unlock and sleep so other thread can lock the mutex
+                drop(clients); // explicitly unlock and sleep so other thread can lock the mutex
                 std::thread::sleep(Duration::from_millis(50));
             },
         };
@@ -96,6 +124,4 @@ fn main() -> io::Result<()> {
 //        stream.write(&[s.len() as u8])?;
 //        stream.write(s.as_bytes())?;
     }
-
-    Ok(())
 }
