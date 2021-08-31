@@ -1,8 +1,17 @@
 use std::net::*;
 use std::io::{self, prelude::*};
+use std::os::unix::io::AsRawFd;
 
-mod get_user_input;
-use crate::get_user_input::*;
+mod util;
+use crate::util::*;
+
+mod messages;
+use crate::messages::*;
+
+enum StdinOrServer {
+    Stdin,
+    Server,
+}
 
 fn main() -> io::Result<()> {
     let ip_and_maybe_port: (IpAddr, Option<u16>) = get_user_input(
@@ -34,18 +43,55 @@ fn main() -> io::Result<()> {
     };
 
     let addr: SocketAddr = (ip, port).into();
-    let mut socket = TcpStream::connect(addr)?;
+    let mut stream = TcpStream::connect(addr)?;
+    let mut name: String =
+        // get first message, which should be a NameAssignment
+        match Message::from_bytes(&recv_msg(&mut stream)?) {
+            Some(Message::NameAssignment(name)) => name.into(),
+            _ => {
+                eprintln!("Server did not respond as expected.");
+                Err(io::Error::new(io::ErrorKind::InvalidData, "Server did not send a NameAssignment message"))?;
+                unreachable!()
+            }
+        };
+    println!("Name: {}", name);
 
-    { // TODO
-        let s = format!("Hello, {:?}.", addr);
-        socket.write(&[s.len() as u8])?;
-        socket.write(s.as_bytes())?;
-
-        let mut x = [0u8];
-        socket.read_exact(&mut x)?;
-        let mut s = String::new();
-        Read::take(&socket, x[0] as u64).read_to_string(&mut s)?;
-        println!("Received \"{}\" from {:?}.", s, addr);
+    let mut input_line: String = String::new();
+    let mut stdin = io::stdin();
+    loop {
+        match poll_in(
+            vec![(StdinOrServer::Stdin, &mut stdin as &mut AsRawFd), (StdinOrServer::Server, &mut stream)].into_iter(),
+            50
+        )? {
+            Some((StdinOrServer::Stdin, _)) => {
+                todo!("read from stdin and send to server");
+            },
+            Some((StdinOrServer::Server, _)) => {
+                let msg = recv_msg(&mut stream)?;
+                use Message::*;
+                match Message::from_bytes(&msg[..]) {
+                    Some(Disconnect) => {
+                        println!("Disconnected.");
+                        todo!("formatted output");
+                    },
+                    Some(ChatMessage(s)) => {
+                        println!("{}", s);
+                        todo!("formatted output");
+                    },
+                    _ => todo!(),
+                };
+            },
+            None => {},
+        };
+//        let s = format!("Hello, {:?}.", addr);
+//        socket.write(&[s.len() as u8])?;
+//        socket.write(s.as_bytes())?;
+//
+//        let mut x = [0u8];
+//        socket.read_exact(&mut x)?;
+//        let mut s = String::new();
+//        Read::take(&socket, x[0] as u64).read_to_string(&mut s)?;
+//        println!("Received \"{}\" from {:?}.", s, addr);
     }
 
     Ok(())

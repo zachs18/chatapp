@@ -1,0 +1,41 @@
+All messages are prefixed with a 4-byte little-endian unsigned rest-of-message byte length (e.g. the 4-byte length is not itself included in the byte count).
+The next byte is a message type.
+0: name assignment (server -> client)
+
+64: chat message (client -> server: does not include name; server -> client: includes name)
+65: chat message error notification (server -> client)
+
+128: name change request (client -> server)
+129: name change approval (server -> client)
+130: name change denial (server -> client)
+
+255: disconnect notification (either)
+
+All text/names/messages should be valid UTF-8
+
+TODO: only printable ASCII? (e.g. prevent printing terminal codes)
+
+format:
+0: name assignment
+    the rest of the message is the client's new name
+
+64: chat message
+    the rest of the message is the message
+65: chat message error notification
+    the next byte indicates the error
+    0: invalid UTF-8
+    127: other
+    128-255: reserved
+
+128: name change request
+    the rest of the message is the requested new name
+129: name change approval
+    the message is empty
+130: name change denial
+    the next byte indicates the reason
+    0: name already exists
+    127: other
+    128-255: reserved
+
+255: disconnect notification
+    the rest of the message is empty
