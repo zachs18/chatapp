@@ -10,6 +10,18 @@ use crate::util::*;
 mod messages;
 use crate::messages::*;
 
+fn new_name_validity(clients: &HashMap<SocketAddr, (String, TcpStream)>, addr: SocketAddr, new_name: &str) -> Result<(), u8> {
+    if new_name.len() == 0 {
+        return Err(0);
+    }
+    for (other_addr, (other_name, _)) in clients.iter() {
+        if &addr != other_addr && other_name == new_name {
+            return Err(1);
+        }
+    }
+    return Ok(());
+}
+
 fn main() -> io::Result<()> {
     let ip_and_maybe_port: (IpAddr, Option<u16>) = get_user_input(
         io::stdout().lock(),
@@ -89,19 +101,26 @@ fn main() -> io::Result<()> {
                         }
                     },
                     Some(NameChangeRequest(new_name)) => {
-                        let mut new_name: String = new_name.into();
-                        let addr = *addr;
-                        // TODO: uniqueness checking
-                        let (name, stream) = clients.get_mut(&addr).unwrap();
-                        std::mem::swap(name, &mut new_name);
-                        let old_name = new_name;
-                        send_msg(stream, &NameChangeApproval.to_bytes())?;
-                        let msg = ChatMessage(format!("{} is now known as {}", old_name, name).into());
-                        let msg_bytes = msg.to_bytes();
-                        for (dst_addr, (_, stream)) in clients.iter_mut() {
-                            if dst_addr != &addr {
-                                send_msg(stream, &msg_bytes)?;
-                            }
+                        let src_addr = *addr;
+                        match new_name_validity(&*clients, src_addr, &new_name) {
+                            Ok(()) => {
+                                let mut new_name: String = new_name.into();
+                                let (name, stream) = clients.get_mut(&src_addr).unwrap();
+                                std::mem::swap(name, &mut new_name);
+                                let old_name = new_name;
+                                send_msg(stream, &NameChangeApproval.to_bytes())?;
+                                let msg = ChatMessage(format!("{} is now known as {}", old_name, name).into());
+                                let msg_bytes = msg.to_bytes();
+                                for (dst_addr, (_, stream)) in clients.iter_mut() {
+                                    if dst_addr != &src_addr {
+                                        send_msg(stream, &msg_bytes)?;
+                                    }
+                                }
+                            },
+                            Err(reason) => {
+                                let (_, stream) = clients.get_mut(&src_addr).unwrap();
+                                send_msg(stream, &NameChangeDenial(reason).to_bytes())?;
+                            },
                         }
                     },
                     _ => todo!(),
