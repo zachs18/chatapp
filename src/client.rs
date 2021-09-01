@@ -184,8 +184,10 @@ fn main() -> io::Result<()> {
                 .block(Block::default().borders(Borders::ALL).title("Input"));
             f.render_widget(input_prompt, chunks[1]);
 
+            let message_count = (chunks[2].height - 2) as usize;
+
             let messages: List = List::new(
-                message_history.iter()
+                message_history.iter().rev().take(message_count).rev()
                     .map(|s| ListItem::new(&**s))
                     .collect::<Vec<_>>()
             ).block(Block::default().borders(Borders::ALL).title("Messages"));
@@ -224,8 +226,10 @@ fn main() -> io::Result<()> {
         let disconnected_box = Paragraph::new(Text::from("Disconnected"));
         f.render_widget(disconnected_box, chunks[0]);
 
+        let message_count = (chunks[1].height - 2) as usize;
+
         let messages: List = List::new(
-            message_history.iter()
+            message_history.iter().rev().take(message_count).rev()
                 .map(|s| ListItem::new(&**s))
                 .collect::<Vec<_>>()
         ).block(Block::default().borders(Borders::ALL).title("Messages"));
