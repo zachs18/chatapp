@@ -35,6 +35,7 @@ pub fn get_user_input<T>(
 /// timeout > 0 -> block for timeout milliseconds
 /// Returns the index of the first Fd that was ready for reading,
 /// or None if none were ready before the timeout, or some errored.
+#[allow(dead_code)] // only used in server
 pub fn poll_in<'a, K, F: AsRawFd + ?Sized>(fds: impl Iterator<Item=(K, &'a mut F)>, timeout: i32) -> io::Result<Option<(K, &'a mut F)>> {
     let (mut pollfds, refs): (Vec<pollfd>, Vec<(K, &'a mut F)>) = fds.map(
         |arf| { (

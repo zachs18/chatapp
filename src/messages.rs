@@ -70,4 +70,17 @@ impl<'a> Message<'a> {
         };
         bytes
     }
+    #[allow(dead_code)] // only used in client
+    pub fn into_owned(self) -> Message<'static> {
+        use Message::*;
+        match self {
+            NameAssignment(name) => NameAssignment(Cow::Owned(name.into_owned())),
+            ChatMessage(s) => ChatMessage(Cow::Owned(s.into_owned())),
+            ChatMessageError(error) => ChatMessageError(error),
+            NameChangeRequest(name) => NameChangeRequest(Cow::Owned(name.into_owned())),
+            NameChangeApproval => NameChangeApproval,
+            NameChangeDenial(reason) => NameChangeDenial(reason),
+            Disconnect => Disconnect,
+        }
+    }
 }

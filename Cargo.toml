@@ -1,6 +1,6 @@
 [package]
 name = "chatapp"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2018"
 
 [[bin]]
@@ -15,3 +15,6 @@ path = "src/server.rs"
 
 [dependencies]
 libc = "0.2"
+tui = "0.16"
+termion = "1.5"
+unicode-width = "0.1"
